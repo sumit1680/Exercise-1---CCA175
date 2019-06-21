@@ -1,0 +1,32 @@
+/*
+spark-shell --master yarn \
+  --conf spark.ui.port=12345 \
+  --num-executors 6 \
+  --executor-cores 2 \
+  --executor-memory 2G
+*/
+
+// Solution using data frame
+val crimeData = sc.textFile("/public/crime/csv")
+val header = crimeData.first
+val crimeDataWithoutHeader = crimeData.filter(criminalRecord => criminalRecord != header)
+
+val crimeDataWithDateAndTypeDF = crimeDataWithoutHeader.
+  map(rec => (rec.split(",")(2), rec.split(",")(5))).
+  toDF("crime_date", "crime_type")
+
+crimeDataWithDateAndTypeDF.registerTempTable("crime_data")
+
+val crimeCountPerMonthPerTypeDF = sqlContext.
+  sql("select cast(concat(substr(crime_date, 7, 4), substr(crime_date, 0, 2)) as int) crime_month, " +
+  "count(1) crime_count_per_month_per_type, " +
+  "crime_type " +
+  "from crime_data " +
+  "group by cast(concat(substr(crime_date, 7, 4), substr(crime_date, 0, 2)) as int), crime_type " +
+  "order by crime_month, crime_count_per_month_per_type desc")
+
+crimeCountPerMonthPerTypeDF.rdd.
+  map(rec => rec.mkString("\t")).
+  coalesce(1).
+  saveAsTextFile("/user/sumitsinha1680/solutions/solution01/crimes_by_type_by_month", 
+    classOf[org.apache.hadoop.io.compress.GzipCodec])
